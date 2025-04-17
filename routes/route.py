@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Request
-from datetime import datetime, timezone
+from datetime import datetime
 
 from config.database import entradas_collection, usuarios_collection
 from schema.schemas import entrada_lista_serializer
@@ -39,22 +39,34 @@ async def delete_entrada(id: str):
 
 @router.post("/mensagem")
 async def receber_mensagem(request: Request):
-    dados = await request.json()
-    mensagem = dados.get("mensagem")
-    telefone = dados.get("telefone")
+
+    content_type = request.headers.get("Content-Type")
+
+    if "application/json" in content_type:
+        dados = await request.json()
+        mensagem = dados.get("mensagem")
+        telefone = dados.get("telefone")
+    elif "application/x-www-form-urlencoded" in content_type:
+        dados = await request.form()
+        mensagem = dados.get("Body")
+        telefone = dados.get("From").replace("whatsapp:", "")
+    else:
+        return {"erro": "Formato de conteúdo não suportado"}
 
     if not mensagem or not telefone:
         return {"erro": "Mensagem ou telefone ausente"}
 
     resultado = interpretar_mensagem(mensagem)
-
     if not resultado:
         return {"erro": "Não foi possível interpretar a mensagem"}
 
     usuario = usuarios_collection.find_one({"user_id": telefone})
 
     if not usuario:
-        novo_usuario = {"user_id": telefone, "criado_em": datetime.now(fuso_horario)}
+        novo_usuario = {
+            "user_id": telefone,
+            "criado_em": datetime.now(fuso_horario),
+        }
         usuarios_collection.insert_one(novo_usuario)
 
     nova_entrada = Entradas(
